@@ -1,0 +1,7 @@
+# Vercel Deployment - Ignore these files
+.env*.local
+.env.local
+*.log
+.DS_Store
+README.md
+SETUP.md
