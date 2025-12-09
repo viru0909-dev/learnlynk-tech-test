@@ -6,12 +6,13 @@
  * - Fetches tasks with status != 'completed' and due today
  * - Displays task details (type, application_id, due_at, status)
  * - Allows marking tasks as complete
+ * - Uses React Query for state management (as per assessment requirement)
  */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Head from 'next/head';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
-
 
 interface Task {
     id: string;
@@ -23,16 +24,12 @@ interface Task {
 }
 
 export default function TodayPage() {
-    const [tasks, setTasks] = useState<Task[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+    const queryClient = useQueryClient();
 
-    // Fetch tasks due today
-    const fetchTasks = async () => {
-        try {
-            setLoading(true);
-            setError(null);
-
+    // Fetch tasks due today using React Query
+    const { data: tasks = [], isLoading, error, refetch } = useQuery({
+        queryKey: ['tasks', 'today'],
+        queryFn: async () => {
             // Calculate start and end of today
             const now = new Date();
             const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -46,22 +43,14 @@ export default function TodayPage() {
                 .lt('due_at', endOfDay.toISOString())
                 .order('due_at', { ascending: true });
 
-            if (error) {
-                throw error;
-            }
+            if (error) throw error;
+            return data as Task[];
+        },
+    });
 
-            setTasks(data || []);
-        } catch (err) {
-            console.error('Error fetching tasks:', err);
-            setError(err instanceof Error ? err.message : 'Failed to fetch tasks');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    // Mark task as complete
-    const markComplete = async (taskId: string) => {
-        try {
+    // Mark task as complete using React Query mutation
+    const markCompleteMutation = useMutation({
+        mutationFn: async (taskId: string) => {
             const { error } = await supabase
                 .from('tasks')
                 .update({
@@ -70,22 +59,17 @@ export default function TodayPage() {
                 })
                 .eq('id', taskId);
 
-            if (error) {
-                throw error;
-            }
-
-            // Refresh tasks after update
-            await fetchTasks();
-        } catch (err) {
-            console.error('Error marking task complete:', err);
-            alert(err instanceof Error ? err.message : 'Failed to mark task as complete');
-        }
-    };
-
-    // Fetch tasks on component mount
-    useEffect(() => {
-        fetchTasks();
-    }, []);
+            if (error) throw error;
+            return taskId;
+        },
+        onSuccess: () => {
+            // Invalidate and refetch tasks query
+            queryClient.invalidateQueries({ queryKey: ['tasks', 'today'] });
+        },
+        onError: (err: Error) => {
+            alert(err.message || 'Failed to mark task as complete');
+        },
+    });
 
     // Format date/time for display
     const formatTime = (isoString: string) => {
@@ -150,7 +134,7 @@ export default function TodayPage() {
                     </div>
 
                     {/* Loading state */}
-                    {loading && (
+                    {isLoading && (
                         <div className="flex justify-center items-center py-12">
                             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
                         </div>
@@ -159,9 +143,9 @@ export default function TodayPage() {
                     {/* Error state */}
                     {error && (
                         <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6">
-                            <p className="text-red-800">Error: {error}</p>
+                            <p className="text-red-800">Error: {error instanceof Error ? error.message : 'Failed to fetch tasks'}</p>
                             <button
-                                onClick={fetchTasks}
+                                onClick={() => refetch()}
                                 className="mt-2 text-sm text-red-600 hover:text-red-700 font-medium"
                             >
                                 Try again
@@ -170,7 +154,7 @@ export default function TodayPage() {
                     )}
 
                     {/* Tasks list */}
-                    {!loading && !error && (
+                    {!isLoading && !error && (
                         <>
                             {tasks.length === 0 ? (
                                 <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
@@ -246,10 +230,11 @@ export default function TodayPage() {
                                                         </td>
                                                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                                             <button
-                                                                onClick={() => markComplete(task.id)}
-                                                                className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                                                                onClick={() => markCompleteMutation.mutate(task.id)}
+                                                                disabled={markCompleteMutation.isPending}
+                                                                className="inline-flex items-center px-3 py-1.5 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                                             >
-                                                                Mark Complete
+                                                                {markCompleteMutation.isPending ? 'Updating...' : 'Mark Complete'}
                                                             </button>
                                                         </td>
                                                     </tr>

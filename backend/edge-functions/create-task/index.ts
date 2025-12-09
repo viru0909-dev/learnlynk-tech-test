@@ -211,6 +211,28 @@ serve(async (req) => {
     }
 
     // ========================================================================
+    // REALTIME BROADCAST EVENT
+    // ========================================================================
+    // Emit a Supabase Realtime broadcast event as per assessment requirement
+    try {
+      await supabase.channel('tasks')
+        .send({
+          type: 'broadcast',
+          event: 'task.created',
+          payload: {
+            task_id: task.id,
+            application_id,
+            task_type,
+            due_at,
+            created_at: new Date().toISOString(),
+          },
+        });
+    } catch (broadcastError) {
+      // Log broadcast error but don't fail the request
+      console.error("Realtime broadcast error:", broadcastError);
+    }
+
+    // ========================================================================
     // SUCCESS RESPONSE
     // ========================================================================
 
