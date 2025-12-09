@@ -1,18 +1,11 @@
-/**
- * LearnLynk Technical Assessment - Dashboard Page: Today's Tasks
- * 
- * Displays tasks due today that are not completed
- * Features:
- * - Fetches tasks with status != 'completed' and due today
- * - Displays task details (type, application_id, due_at, status)
- * - Allows marking tasks as complete
- * - Uses React Query for state management (as per assessment requirement)
- */
+// Dashboard page to show tasks due today
+// Uses React Query for data fetching and mutations
 
 import { useState } from 'react';
 import Head from 'next/head';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
+
 
 interface Task {
     id: string;
@@ -26,7 +19,7 @@ interface Task {
 export default function TodayPage() {
     const queryClient = useQueryClient();
 
-    // Fetch tasks due today using React Query
+    // Fetch tasks due today
     const { data: tasks = [], isLoading, error, refetch } = useQuery({
         queryKey: ['tasks', 'today'],
         queryFn: async () => {
@@ -48,7 +41,7 @@ export default function TodayPage() {
         },
     });
 
-    // Mark task as complete using React Query mutation
+    // Update task status to completed
     const markCompleteMutation = useMutation({
         mutationFn: async (taskId: string) => {
             const { error } = await supabase
@@ -63,15 +56,14 @@ export default function TodayPage() {
             return taskId;
         },
         onSuccess: () => {
-            // Invalidate and refetch tasks query
+            // Refresh tasks list
             queryClient.invalidateQueries({ queryKey: ['tasks', 'today'] });
         },
         onError: (err: Error) => {
-            alert(err.message || 'Failed to mark task as complete');
+            alert(err.message || 'Failed to update task');
         },
     });
 
-    // Format date/time for display
     const formatTime = (isoString: string) => {
         const date = new Date(isoString);
         return date.toLocaleTimeString('en-US', {
@@ -80,7 +72,6 @@ export default function TodayPage() {
         });
     };
 
-    // Get badge color based on task type
     const getTypeBadgeColor = (type: string) => {
         switch (type) {
             case 'call':
@@ -94,7 +85,6 @@ export default function TodayPage() {
         }
     };
 
-    // Get badge color based on status
     const getStatusBadgeColor = (status: string) => {
         switch (status) {
             case 'pending':

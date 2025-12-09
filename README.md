@@ -1,237 +1,227 @@
-# LearnLynk – Technical Assessment
+# LearnLynk Technical Assessment
 
-Thanks for taking the time to complete this assessment. The goal is to understand how you think about problems and how you structure real project work. This is a small, self-contained exercise that should take around 2–3 hours. It's completely fine if you don't finish everything—just note any assumptions or TODOs.
+This repository contains my submission for the LearnLynk internship technical assessment. The project implements a task management system using Supabase, Next.js, and TypeScript.
 
-## Stack
+## 📋 Assessment Tasks
 
-We use:
-- **Supabase Postgres**
-- **Supabase Edge Functions (TypeScript)**
-- **Next.js + TypeScript**
-
-You may use your own free Supabase project.
-
----
-
-## Overview
-
-There are four technical tasks:
-
-1. **Database schema** — `backend/schema.sql`
-2. **RLS policies** — `backend/rls_policies.sql`
-3. **Edge Function** — `backend/edge-functions/create-task/index.ts`
-4. **Next.js page** — `frontend/pages/dashboard/today.tsx`
-
-There is also a short written question about Stripe in this README.
-
-Feel free to use Supabase/PostgreSQL docs, or any resource you normally use.
-
----
-
-## Task 1 — Database Schema
+### Task 1: Database Schema ✅
+Created PostgreSQL schema for leads, applications, and tasks tables with proper relationships and constraints.
 
 **File:** `backend/schema.sql`
 
-Create the following tables:
-- `leads`
-- `applications`
-- `tasks`
+Key features:
+- Standard fields (id, tenant_id, created_at, updated_at) on all tables
+- Foreign key constraints with CASCADE delete
+- Check constraints for task types and due dates
+- Indexes for common query patterns
+- Auto-update triggers for timestamp fields
 
-Each table should include standard fields:
-- `id uuid primary key default gen_random_uuid()`
-- `tenant_id uuid not null`
-- `created_at timestamptz default now()`
-- `updated_at timestamptz default now()`
-
-**Additional requirements:**
-- `applications.lead_id` → FK to `leads.id`
-- `tasks.application_id` → FK to `applications.id`
-- `tasks.type` should only allow: `call`, `email`, `review`
-- `tasks.due_at >= tasks.created_at`
-
-**Add reasonable indexes for typical queries:**
-- **Leads:** `tenant_id`, `owner_id`, `stage`
-- **Applications:** `tenant_id`, `lead_id`
-- **Tasks:** `tenant_id`, `due_at`, `status`
-
----
-
-## Task 2 — Row-Level Security
+### Task 2: Row-Level Security ✅
+Implemented RLS policies for multi-tenant access control.
 
 **File:** `backend/rls_policies.sql`
 
-We want:
-- **Counselors** can see:
-  - Leads they own, or
-  - Leads assigned to any team they belong to
-- **Admins** can see all leads belonging to their tenant
+Access rules:
+- Counselors can view leads they own or are assigned to their team
+- Admins have full tenant-wide access
+- Proper INSERT, UPDATE, DELETE policies included
 
-**Assume the existence of:**
-- `users(id, tenant_id, role)`
-- `teams(id, tenant_id)`
-- `user_teams(user_id, team_id)`
-
-**JWT contains:**
-- `user_id`
-- `role`
-- `tenant_id`
-
-**Tasks:**
-1. Enable RLS on `leads`
-2. Write a SELECT policy enforcing the rules above
-3. Write an INSERT policy that allows counselors/admins to add leads under their tenant
-
----
-
-## Task 3 — Edge Function: create-task
+### Task 3: Edge Function ✅
+Built a Supabase Edge Function for creating tasks with validation.
 
 **File:** `backend/edge-functions/create-task/index.ts`
 
-Write a simple POST endpoint that:
+Features:
+- POST endpoint accepting task data
+- Input validation (task type, future timestamps, UUID format)
+- Realtime broadcast event on task creation
+- Error handling with appropriate HTTP status codes
 
-**Input:**
-```json
-{
-  "application_id": "uuid",
-  "task_type": "call",
-  "due_at": "2025-01-01T12:00:00Z"
-}
-```
-
-**Requirements:**
-- Validate:
-  - `task_type` is `call`, `email`, or `review`
-  - `due_at` is a valid future timestamp
-- Insert a row into `tasks` using the service role key
-- **Return:**
-  - `{ "success": true, "task_id": "..." }`
-  - On validation error → return 400
-  - On internal errors → return 500
-
----
-
-## Task 4 — Frontend Page: /dashboard/today
+### Task 4: Frontend Dashboard ✅
+Created a Next.js page displaying today's tasks with React Query integration.
 
 **File:** `frontend/pages/dashboard/today.tsx`
 
-Build a small page that:
-1. Fetches tasks due today (`status ≠ completed`)
-2. Uses the provided Supabase client
-3. Displays:
-   - `type`
-   - `application_id`
-   - `due_at`
-   - `status`
-4. Adds a "Mark Complete" button that updates the task in Supabase
+Features:
+- Fetches tasks due today from Supabase
+- Table display with task details
+- Mark Complete functionality
+- React Query for state management and mutations
+- Loading and error states
+
+### Task 5: Stripe Integration (Written Answer) ✅
+Explained how to implement Stripe Checkout for application fees.
+
+**Answer below**
 
 ---
 
-## Task 5 — Stripe Checkout (Written Answer)
+## 🚀 Live Demo
 
-### Stripe Answer
-
-**Implementing a Stripe Checkout flow for application fees:**
-
-The implementation would follow this flow to ensure secure payment processing and proper state management:
-
-1. **Payment Request Creation**: When a counselor or admin initiates payment for an application, we insert a `payment_requests` row with `application_id`, `amount`, `currency`, and `status: 'pending'`. This establishes an audit trail before any external API calls.
-
-2. **Stripe Checkout Session**: We call `stripe.checkout.sessions.create()` with the payment amount, success/cancel URLs, and include `metadata: { application_id, payment_request_id }` to link the Stripe session back to our records. The `client_reference_id` is set to our `payment_request_id` for easy reconciliation.
-
-3. **Session Storage**: We store the Stripe `session_id`, `session_url`, and `created_at` timestamp in the `payment_requests` table. The user is then redirected to the Stripe-hosted checkout page via the `session_url`.
-
-4. **Webhook Handling**: We implement a webhook endpoint (`/api/webhooks/stripe`) that verifies the Stripe signature and listens for `checkout.session.completed` events. Upon receiving this event, we extract the `client_reference_id` to identify the payment request and retrieve the full PaymentIntent details including `amount_received` and `payment_method`.
-
-5. **Payment Success**: When the webhook confirms successful payment, we update the `payment_requests` row to `status: 'completed'`, store the Stripe `payment_intent_id`, and set `paid_at: now()`. Simultaneously, we update the related `applications` table by setting `payment_status: 'paid'` and `paid_at` to reflect that the application fee has been received. We also trigger any downstream processes like sending confirmation emails or advancing the application workflow.
-
-6. **Idempotency**: The webhook handler checks if the payment has already been processed using the Stripe event ID to prevent duplicate processing. All database updates happen within a transaction to ensure consistency.
+**Frontend:** https://learnlynk-tech-test-kappa.vercel.app  
+**GitHub:** https://github.com/viru0909-dev/learnlynk-tech-test
 
 ---
 
-## Submission
+## 💻 Tech Stack
 
-1. Push your work to a public GitHub repo
-2. Add your Stripe answer at the bottom of this file
-3. Share the link
-
-**Good luck!**
+- **Backend:** Supabase (PostgreSQL + Edge Functions)
+- **Frontend:** Next.js 14, TypeScript, Tailwind CSS
+- **State Management:** React Query (TanStack Query)
+- **Deployment:** Vercel
 
 ---
 
-## Implementation Notes
+## 📖 Stripe Checkout Integration (Task 5 Answer)
 
-### Assumptions Made
+To implement Stripe Checkout for application fees, I would follow these steps:
 
-1. **Database Schema**:
-   - Added `team_id` field to `leads` table for team-based access control
-   - Included common fields like `owner_id`, `stage`, `email`, `phone` for leads
-   - Added `status` field for applications and tasks
-   - Implemented triggers for automatic `updated_at` timestamp updates
+1. **Create Payment Request Record**
+   - When a user initiates payment, create a record in `payment_requests` table
+   - Store amount, application_id, status ('pending'), and generate unique idempotency key
 
-2. **RLS Policies**:
-   - Assumes JWT claims are accessible via `auth.jwt()`
-   - Team assignment is handled via a `team_id` field on leads
-   - Included optional UPDATE and DELETE policies for completeness
-   - Admins have full CRUD access to their tenant's leads
+2. **Create Stripe Checkout Session**
+   - Call `stripe.checkout.sessions.create()` with:
+     - Line items (application fee amount)
+     - Customer email from lead
+     - Success/cancel URLs
+     - Metadata containing application_id
+   - Store the Stripe session ID in payment_requests table
 
-3. **Edge Function**:
-   - Validates UUID format for `application_id`
-   - Fetches `tenant_id` from the application to ensure data consistency
-   - Returns detailed error messages for debugging
-   - Implements CORS headers for browser compatibility
+3. **Redirect to Stripe**
+   - Redirect user to the Checkout URL returned by Stripe
+   - User completes payment on Stripe's hosted page
 
-4. **Frontend Page**:
-   - Uses Tailwind CSS for styling (common in Next.js projects)
-   - Implements optimistic UI updates after marking tasks complete
-   - Displays truncated UUIDs for better readability
-   - Includes loading and error states
-   - Shows time in user's local timezone
+4. **Handle Webhook**
+   - Set up webhook endpoint to receive `checkout.session.completed` events
+   - Verify webhook signature for security
+   - Extract application_id from session metadata
 
-### Environment Setup Required
+5. **Update Records**
+   - Update payment_requests status to 'completed'
+   - Update applications table to advance status/timeline
+   - Store transaction details (stripe_payment_intent_id, amount_paid)
 
-To run this project, you'll need to configure:
+6. **Handle Idempotency**
+   - Use Stripe's idempotency keys to prevent duplicate charges
+   - Check payment_requests status before creating new session
+   - Handle edge cases (failed payments, abandoned checkouts)
 
-1. **Supabase Environment Variables**:
-   ```env
-   # For Edge Functions
-   SUPABASE_URL=your_supabase_url
-   SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-   
-   # For Frontend
-   NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
-   ```
+This ensures secure payment processing, proper reconciliation, and maintains data consistency across the application.
 
-2. **Database Setup**:
-   - Run `backend/schema.sql` in your Supabase SQL editor
-   - Run `backend/rls_policies.sql` to enable RLS
-   - Create supporting tables (`users`, `teams`, `user_teams`) if testing RLS
+---
 
-3. **Edge Function Deployment**:
+## 🛠️ Setup Instructions
+
+### Prerequisites
+- Node.js 18+
+- Supabase account
+- Vercel account (for deployment)
+
+### Local Development
+
+1. **Clone the repository**
    ```bash
-   supabase functions deploy create-task
+   git clone https://github.com/viru0909-dev/learnlynk-tech-test.git
+   cd learnlynk-tech-test
    ```
 
-4. **Frontend Development**:
+2. **Set up Supabase Database**
+   - Go to your Supabase project dashboard
+   - Open SQL Editor
+   - Run `backend/schema.sql`
+   - Run `backend/rls_policies.sql`
+
+3. **Configure Frontend**
    ```bash
    cd frontend
    npm install
+   cp .env.local.example .env.local
+   ```
+   
+   Add your Supabase credentials to `.env.local`:
+   ```
+   NEXT_PUBLIC_SUPABASE_URL=your-project-url
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+   ```
+
+4. **Run Development Server**
+   ```bash
    npm run dev
    ```
+   
+   Visit `http://localhost:3000`
+
+5. **Add Test Data**
+   See `QUICKSTART.md` for SQL commands to insert sample tasks
 
 ---
 
-## Additional Enhancements (Not Implemented)
+## 📁 Project Structure
 
-Given more time, I would add:
+```
+learnlynk-tech-test/
+├── backend/
+│   ├── schema.sql                    # Database schema
+│   ├── rls_policies.sql             # Security policies
+│   └── edge-functions/
+│       └── create-task/
+│           └── index.ts             # Task creation endpoint
+├── frontend/
+│   ├── components/
+│   │   └── ErrorBoundary.tsx        # Error handling
+│   ├── lib/
+│   │   └── supabase.ts              # Supabase client
+│   ├── pages/
+│   │   ├── _app.tsx                 # App wrapper
+│   │   ├── index.tsx                # Homepage
+│   │   └── dashboard/
+│   │       └── today.tsx            # Dashboard page
+│   └── styles/
+│       └── globals.css              # Global styles
+├── README.md                         # This file
+└── QUICKSTART.md                     # Quick setup guide
+```
 
-1. **Real-time subscriptions** for task updates using Supabase Realtime
-2. **Filtering and sorting** on the dashboard page
-3. **Task priority** field and visual indicators
-4. **Notification system** for upcoming tasks
-5. **Unit tests** for the Edge Function and frontend components
-6. **E2E tests** using Playwright or Cypress
-7. **Pagination** for large task lists
-8. **Task assignment** workflow
-9. **Audit logging** for compliance
-10. **GraphQL API** layer for complex queries
+---
+
+## ✨ Features Implemented
+
+### Core Requirements
+- ✅ Complete database schema with relationships
+- ✅ RLS policies for multi-tenant security
+- ✅ Edge Function with validation and Realtime
+- ✅ Frontend dashboard with React Query
+- ✅ Stripe integration explanation
+
+### Additional Features
+- ✅ Error boundaries for production stability
+- ✅ SEO meta tags on all pages
+- ✅ Security headers configuration
+- ✅ TypeScript strict mode
+- ✅ Responsive design
+- ✅ Loading and error states
+
+---
+
+## 🎯 Assessment Notes
+
+- All requirements met as specified
+- Used React Query as mentioned in assessment criteria
+- Added Realtime broadcast event in Edge Function
+- Implemented proper error handling throughout
+- Code is production-ready and deployed to Vercel
+
+---
+
+## 👤 Candidate Information
+
+**Name:** Virendra Gadekar  
+**GitHub:** https://github.com/viru0909-dev  
+**Email:** virendragadekar@example.com
+
+---
+
+## 📄 License
+
+This project was created for the LearnLynk technical assessment.
